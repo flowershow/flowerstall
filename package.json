@@ -4,7 +4,8 @@
   "private": true,
   "description": "Minimal local preview server for Markdown/HTML with Tailwind CDN and live reload",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",

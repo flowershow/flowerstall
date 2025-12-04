@@ -7,10 +7,10 @@ const matter = require('gray-matter');
 const livereload = require('livereload');
 const mime = require('mime');
 const { unified } = require('unified');
-const remarkParse = require('remark-parse');
-const remarkRehype = require('remark-rehype');
-const rehypeRaw = require('rehype-raw');
-const rehypeStringify = require('rehype-stringify');
+const remarkParse = require('remark-parse').default;
+const remarkRehype = require('remark-rehype').default;
+const rehypeRaw = require('rehype-raw').default;
+const rehypeStringify = require('rehype-stringify').default;
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -18,6 +18,7 @@ function parseArgs() {
     file: 'index.md',
     port: 3000,
     livereloadPort: 35729,
+    livereload: true,
     css: [],
     root: null,
   };
@@ -30,6 +31,8 @@ function parseArgs() {
       options.port = Number(args[++i]);
     } else if (arg === '--lr-port' && args[i + 1]) {
       options.livereloadPort = Number(args[++i]);
+    } else if (arg === '--no-lr' || arg === '--no-livereload') {
+      options.livereload = false;
     } else if (arg === '--css' && args[i + 1]) {
       options.css = args[++i]
         .split(',')
@@ -63,9 +66,10 @@ function htmlTemplate({ body, livereloadPort, cssLinks }) {
   const cssTags = cssLinks
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join('\n    ');
-  const livereloadScript = livereloadPort
-    ? `<script src="http://localhost:${livereloadPort}/livereload.js?snipver=1"></script>`
-    : '';
+  const livereloadScript =
+    livereloadPort && Number.isInteger(livereloadPort) && livereloadPort > 0
+      ? `<script src="http://localhost:${livereloadPort}/livereload.js?snipver=1"></script>`
+      : '';
 
   return `<!DOCTYPE html>
 <html>
@@ -83,9 +87,15 @@ function htmlTemplate({ body, livereloadPort, cssLinks }) {
 }
 
 function startLivereload({ root, watchPaths, livereloadPort }) {
-  const lrServer = livereload.createServer({ port: livereloadPort, exts: ['md', 'html', 'css', 'js'] });
-  lrServer.watch(watchPaths);
-  return lrServer;
+  try {
+    const lrServer = livereload.createServer({ port: livereloadPort, exts: ['md', 'html', 'css', 'js'] });
+    lrServer.watch(watchPaths);
+    const actualPort = lrServer?.server?.address()?.port || livereloadPort;
+    return { server: lrServer, port: actualPort };
+  } catch (err) {
+    console.warn(`Livereload disabled (${err.code || 'error'}: ${err.message})`);
+    return { server: null, port: null };
+  }
 }
 
 async function createServer(options) {
@@ -108,7 +118,9 @@ async function createServer(options) {
   const cssLinks = cssFiles.map((item) => `/${path.relative(root, item.abs).replace(/\\/g, '/')}`);
 
   const watchPaths = [targetFile, ...cssFiles.map((c) => c.abs)];
-  const lrServer = startLivereload({ root, watchPaths, livereloadPort: options.livereloadPort });
+  const lrInfo = options.livereload
+    ? startLivereload({ root, watchPaths, livereloadPort: options.livereloadPort })
+    : { server: null, port: null };
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -122,7 +134,7 @@ async function createServer(options) {
         const rawContent = fs.readFileSync(targetFile, 'utf8');
         const { content } = matter(rawContent);
         const body = await renderMarkdownToHtml(content);
-        const html = htmlTemplate({ body, livereloadPort: options.livereloadPort, cssLinks });
+        const html = htmlTemplate({ body, livereloadPort: lrInfo.port, cssLinks });
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(html);
         return;
@@ -154,16 +166,26 @@ async function createServer(options) {
   server.listen(options.port, () => {
     console.log(`flowerstall running at http://localhost:${options.port}`);
     console.log(`Serving ${options.file} from ${root}`);
-    console.log(`Live reload on port ${options.livereloadPort}`);
+    if (lrInfo.port) {
+      console.log(`Live reload on port ${lrInfo.port}`);
+    } else {
+      console.log('Live reload disabled.');
+    }
   });
 }
 
-(async () => {
-  try {
-    const options = parseArgs();
-    await createServer(options);
-  } catch (err) {
-    console.error(err.message);
-    process.exit(1);
-  }
-})();
+if (require.main === module) {
+  (async () => {
+    try {
+      const options = parseArgs();
+      await createServer(options);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    }
+  })();
+}
+
+module.exports = {
+  renderMarkdownToHtml,
+};
