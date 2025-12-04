@@ -1,0 +1,19 @@
+{
+  "name": "flowerstall",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal local preview server for Markdown/HTML with Tailwind CDN and live reload",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "livereload": "^0.9.3",
+    "mime": "^3.0.0",
+    "rehype-raw": "^7.0.0",
+    "rehype-stringify": "^10.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.0",
+    "unified": "^11.0.4"
+  }
+}
