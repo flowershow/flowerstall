@@ -18,7 +18,7 @@ npm start -- --file ../index.md --css custom.css --port 3000 --lr-port 35729 --r
 - `--file` (default `index.md`): path to the Markdown/HTML file to render.
 - `--css`: comma-separated list of CSS files to link (resolved relative to root). Defaults to `custom.css` if present.
 - `--port`/`--lr-port`: HTTP and livereload ports.
-- `--root` (default current directory): content root for resolving files and serving static assets.
+- `--root` (default file directory if not provided): content root for resolving files and serving static assets. If the file is outside the provided root, the file's directory is used automatically.
 
 Open `http://localhost:3000` to view. Edits to the target file or watched CSS will auto-refresh.
 

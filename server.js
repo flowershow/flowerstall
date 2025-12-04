@@ -19,7 +19,7 @@ function parseArgs() {
     port: 3000,
     livereloadPort: 35729,
     css: [],
-    root: process.cwd(),
+    root: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -55,10 +55,7 @@ async function renderMarkdownToHtml(markdown) {
 
 function resolveSafe(root, targetPath) {
   const resolved = path.resolve(root, targetPath);
-  if (!resolved.startsWith(root)) {
-    return null;
-  }
-  return resolved;
+  return resolved.startsWith(root) ? resolved : null;
 }
 
 function htmlTemplate({ body, livereloadPort, cssLinks }) {
@@ -87,24 +84,30 @@ function htmlTemplate({ body, livereloadPort, cssLinks }) {
 
 function startLivereload({ root, watchPaths, livereloadPort }) {
   const lrServer = livereload.createServer({ port: livereloadPort, exts: ['md', 'html', 'css', 'js'] });
-  lrServer.watch(watchPaths.map((p) => path.join(root, p)));
+  lrServer.watch(watchPaths);
   return lrServer;
 }
 
 async function createServer(options) {
-  const root = options.root;
-  const targetFile = resolveSafe(root, options.file);
-  if (!targetFile) {
-    throw new Error('Target file resolves outside root.');
+  let root = options.root ? path.resolve(options.root) : null;
+  const targetFile = path.isAbsolute(options.file)
+    ? options.file
+    : path.resolve(root || process.cwd(), options.file);
+
+  if (!root || !targetFile.startsWith(root)) {
+    root = path.dirname(targetFile);
   }
 
   const cssList = options.css.length ? options.css : ['custom.css'];
-  const cssLinks = cssList
-    .map((href) => ({ href, abs: resolveSafe(root, href) }))
-    .filter((item) => item.abs && fs.existsSync(item.abs))
-    .map((item) => `/${path.relative(root, item.abs).replace(/\\/g, '/')}`);
+  const cssFiles = cssList
+    .map((href) => {
+      const abs = path.isAbsolute(href) ? href : path.join(root, href);
+      return { href, abs };
+    })
+    .filter((item) => fs.existsSync(item.abs));
+  const cssLinks = cssFiles.map((item) => `/${path.relative(root, item.abs).replace(/\\/g, '/')}`);
 
-  const watchPaths = [options.file, ...cssList];
+  const watchPaths = [targetFile, ...cssFiles.map((c) => c.abs)];
   const lrServer = startLivereload({ root, watchPaths, livereloadPort: options.livereloadPort });
 
   const server = http.createServer(async (req, res) => {
