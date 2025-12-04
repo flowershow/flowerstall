@@ -14,6 +14,8 @@ Minimal local preview server for Markdown/HTML with Tailwind CDN injection, opti
 cd flowerstall
 npm install
 npm start -- --file ../index.md --css custom.css --port 3000 --lr-port 35729 --root ..
+# or use the CLI wrapper (no npm script needed):
+./flowerstall ../index.md --css custom.css --port 3000 --lr-port 35729
 ```
 - `--file` (default `index.md`): path to the Markdown/HTML file to render.
 - `--css`: comma-separated list of CSS files to link (resolved relative to root). Defaults to `custom.css` if present.
