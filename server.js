@@ -13,32 +13,37 @@ const rehypeRaw = require('rehype-raw').default;
 const rehypeStringify = require('rehype-stringify').default;
 
 function showHelp() {
-  console.log(`Usage: flowerstall [file] [options]
+  console.log(`Usage: flowerstall [directory] [options]
 
-Starts the flowerstall preview server. The first positional arg is the content file (default: index.md).
+Starts the flowerstall preview server. Serves all markdown files from a directory.
+
+URL routing:
+  /           → index.md
+  /about      → about.md
+  /foo/bar    → foo/bar.md (or foo/bar/index.md)
 
 Options:
-  --css <list>       Comma-separated CSS files to include
+  --css <list>       Comma-separated CSS files to include (auto-detects custom.css)
   --port, -p <N>     Server port (default: 3000)
   --lr-port <N>      Live reload port (default: 35729)
   --no-lr            Disable live reload
-  --root <path>      Root directory for serving files
   -h, --help         Show this help message
 
 Examples:
-  flowerstall sample/sample.md
-  flowerstall ../index.md --css custom.css --port 3000 --lr-port 35729`);
+  flowerstall
+  flowerstall ./my-site
+  flowerstall --port 8080
+  flowerstall ./docs --css styles.css,theme.css`);
 }
 
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    file: 'index.md',
     port: 3000,
     livereloadPort: 35729,
     livereload: true,
     css: [],
-    root: null,
+    root: process.cwd(),
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -46,8 +51,6 @@ function parseArgs() {
     if (arg === '-h' || arg === '--help') {
       showHelp();
       process.exit(0);
-    } else if (arg === '--file' && args[i + 1]) {
-      options.file = args[++i];
     } else if ((arg === '--port' || arg === '-p') && args[i + 1]) {
       options.port = Number(args[++i]);
     } else if (arg === '--lr-port' && args[i + 1]) {
@@ -59,11 +62,9 @@ function parseArgs() {
         .split(',')
         .map((c) => c.trim())
         .filter(Boolean);
-    } else if (arg === '--root' && args[i + 1]) {
-      options.root = path.resolve(args[++i]);
-    } else if (!arg.startsWith('-') && i === 0) {
-      // First positional argument is the file
-      options.file = arg;
+    } else if (!arg.startsWith('-')) {
+      // Positional argument is the root directory
+      options.root = path.resolve(arg);
     }
   }
 
@@ -122,17 +123,41 @@ function startLivereload({ root, watchPaths, livereloadPort }) {
   }
 }
 
-async function createServer(options) {
-  let root = options.root ? path.resolve(options.root) : null;
-  const targetFile = path.isAbsolute(options.file)
-    ? options.file
-    : path.resolve(root || process.cwd(), options.file);
-
-  if (!root || !targetFile.startsWith(root)) {
-    root = path.dirname(targetFile);
+function findMarkdownFile(root, urlPath) {
+  // For root path, look for index.md
+  if (!urlPath || urlPath === '/') {
+    const indexFile = path.join(root, 'index.md');
+    return fs.existsSync(indexFile) ? indexFile : null;
   }
 
-  const cssList = options.css.length ? options.css : ['custom.css'];
+  // Remove leading slash and try different patterns
+  const cleanPath = urlPath.replace(/^\//, '').replace(/\/$/, '');
+
+  // Try: /about → about.md
+  const directFile = path.join(root, cleanPath + '.md');
+  if (fs.existsSync(directFile)) {
+    return directFile;
+  }
+
+  // Try: /about → about/index.md
+  const indexInDir = path.join(root, cleanPath, 'index.md');
+  if (fs.existsSync(indexInDir)) {
+    return indexInDir;
+  }
+
+  return null;
+}
+
+async function createServer(options) {
+  const root = path.resolve(options.root);
+
+  // Auto-detect custom.css if no CSS specified
+  const cssList = options.css.length ? options.css : [];
+  const customCssPath = path.join(root, 'custom.css');
+  if (!options.css.length && fs.existsSync(customCssPath)) {
+    cssList.push('custom.css');
+  }
+
   const cssFiles = cssList
     .map((href) => {
       const abs = path.isAbsolute(href) ? href : path.join(root, href);
@@ -141,30 +166,39 @@ async function createServer(options) {
     .filter((item) => fs.existsSync(item.abs));
   const cssLinks = cssFiles.map((item) => `/${path.relative(root, item.abs).replace(/\\/g, '/')}`);
 
-  const watchPaths = [targetFile, ...cssFiles.map((c) => c.abs)];
   const lrInfo = options.livereload
-    ? startLivereload({ root, watchPaths, livereloadPort: options.livereloadPort })
+    ? startLivereload({ root, watchPaths: [root], livereloadPort: options.livereloadPort })
     : { server: null, port: null };
 
   const server = http.createServer(async (req, res) => {
     try {
       const parsedUrl = url.parse(req.url);
-      if (!parsedUrl.pathname || parsedUrl.pathname === '/') {
-        if (!fs.existsSync(targetFile)) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end(`File not found: ${options.file}`);
+      const urlPath = parsedUrl.pathname || '/';
+
+      // First, check if it's a request for a markdown page (no extension or /)
+      const hasExtension = path.extname(urlPath) !== '';
+
+      if (!hasExtension) {
+        const mdFile = findMarkdownFile(root, urlPath);
+        if (mdFile) {
+          const safePath = resolveSafe(root, path.relative(root, mdFile));
+          if (!safePath) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+          }
+          const rawContent = fs.readFileSync(mdFile, 'utf8');
+          const { content } = matter(rawContent);
+          const body = await renderMarkdownToHtml(content);
+          const html = htmlTemplate({ body, livereloadPort: lrInfo.port, cssLinks });
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(html);
           return;
         }
-        const rawContent = fs.readFileSync(targetFile, 'utf8');
-        const { content } = matter(rawContent);
-        const body = await renderMarkdownToHtml(content);
-        const html = htmlTemplate({ body, livereloadPort: lrInfo.port, cssLinks });
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-        return;
       }
 
-      const safePath = resolveSafe(root, parsedUrl.pathname.replace(/^\//, ''));
+      // Otherwise, try to serve as static file
+      const safePath = resolveSafe(root, urlPath.replace(/^\//, ''));
       if (!safePath || !fs.existsSync(safePath)) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
@@ -189,11 +223,12 @@ async function createServer(options) {
 
   server.listen(options.port, () => {
     console.log(`flowerstall running at http://localhost:${options.port}`);
-    console.log(`Serving ${options.file} from ${root}`);
+    console.log(`Serving markdown from ${root}`);
+    if (cssLinks.length) {
+      console.log(`CSS: ${cssLinks.join(', ')}`);
+    }
     if (lrInfo.port) {
       console.log(`Live reload on port ${lrInfo.port}`);
-    } else {
-      console.log('Live reload disabled.');
     }
   });
 }
