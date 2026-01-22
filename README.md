@@ -1,4 +1,6 @@
-# flowerstall
+  # FlowerStall
+
+<img src="flowerstall-logo.png" width="120" alt="logo" />
 
 Minimal local preview server for Markdown/HTML with Tailwind CDN injection, optional local CSS, and live reload.
 
