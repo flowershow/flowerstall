@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Minimal local preview server for Markdown/HTML with Tailwind CDN and live reload",
+  "bin": {
+    "flowerstall": "./server.js"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node --test"

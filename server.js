@@ -12,6 +12,24 @@ const remarkRehype = require('remark-rehype').default;
 const rehypeRaw = require('rehype-raw').default;
 const rehypeStringify = require('rehype-stringify').default;
 
+function showHelp() {
+  console.log(`Usage: flowerstall [file] [options]
+
+Starts the flowerstall preview server. The first positional arg is the content file (default: index.md).
+
+Options:
+  --css <list>       Comma-separated CSS files to include
+  --port, -p <N>     Server port (default: 3000)
+  --lr-port <N>      Live reload port (default: 35729)
+  --no-lr            Disable live reload
+  --root <path>      Root directory for serving files
+  -h, --help         Show this help message
+
+Examples:
+  flowerstall sample/sample.md
+  flowerstall ../index.md --css custom.css --port 3000 --lr-port 35729`);
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
@@ -25,7 +43,10 @@ function parseArgs() {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--file' && args[i + 1]) {
+    if (arg === '-h' || arg === '--help') {
+      showHelp();
+      process.exit(0);
+    } else if (arg === '--file' && args[i + 1]) {
       options.file = args[++i];
     } else if ((arg === '--port' || arg === '-p') && args[i + 1]) {
       options.port = Number(args[++i]);
@@ -40,6 +61,9 @@ function parseArgs() {
         .filter(Boolean);
     } else if (arg === '--root' && args[i + 1]) {
       options.root = path.resolve(args[++i]);
+    } else if (!arg.startsWith('-') && i === 0) {
+      // First positional argument is the file
+      options.file = arg;
     }
   }
 
